@@ -1,4 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { match } from 'assert';
+import { App, Editor, MarkdownPostProcessor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
 
 // Remember to rename these classes and interfaces!
 
@@ -10,16 +11,23 @@ const DEFAULT_SETTINGS: MyPluginSettings = {
 	mySetting: 'default'
 }
 
+const ALL_EMOJIS: Record<string, string> = {
+	":+1:": "👍",
+	":sunglasses:": "😎",
+	":smile:": "😄",
+};
+
 export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
 
 	async onload() {
+		let initLoaded = true;
 		await this.loadSettings();
 
 		// This creates an icon in the left ribbon.
 		const ribbonIconEl = this.addRibbonIcon('dice', 'Sample Plugin', (evt: MouseEvent) => {
 			// Called when the user clicks the icon.
-			new Notice('This is a notice!');
+			new Notice('This is a notice!2');
 		});
 		// Perform additional things with the ribbon
 		ribbonIconEl.addClass('my-plugin-ribbon-class');
@@ -76,6 +84,57 @@ export default class MyPlugin extends Plugin {
 
 		// When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
+
+		const nameDict: { [key: string]: string } = {};
+		this.registerMarkdownPostProcessor((el, ctx) => {
+			// Get all text nodes in el
+			const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+			let node;
+
+			// Create a dictionary to store the mappings from "name" to the actual name
+			const regex = /\{(\w+)\|(\w+)\}/g;
+
+			// Walk through all text nodes
+			while (node = walker.nextNode()) {
+				let match;
+				while ((match = regex.exec(node.nodeValue ?? '')) !== null) {
+					// if (!initLoaded) {
+					// 	// console.log("refreshing");
+					// 	// this.app.commands.executeCommandById('app:open-settings');
+					// }
+					const variable = match[1];
+					const value = match[2];
+					node.nodeValue = node.nodeValue?.replace(match[0], `${variable}=${value}`) ?? node.nodeValue;
+
+					nameDict[variable] = value;
+					// Reset the regex index to start from the beginning of the string
+					regex.lastIndex = 0;
+				}
+			}
+			// console.log(nameDict);
+			initLoaded = false;
+		});
+
+		this.registerMarkdownPostProcessor((el, ctx) => {
+			// Get all text nodes in el
+			const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+			let node;
+
+			// Walk through all text nodes
+			while (node = walker.nextNode()) {
+				// console.log(node.nodeValue);
+				for (const key in nameDict) {
+					// node.nodeValue = node.nodeValue?.replace(new RegExp(`\\{${key}\\}`, 'g'), nameDict[key]) ?? node.nodeValue;
+					// node.nodeValue = node.nodeValue?.replace(new RegExp(`\\{${key}(\\+\\d+)?\\}`, 'g'), (match, num) => nameDict[key] + (num ? num : '')) ?? node.nodeValue;
+					node.nodeValue = node.nodeValue?.replace(new RegExp(`\\{${key}(\\+\\d+)?\\}`, 'g'), (match, num) => {
+						console.log(match, num);
+						const parsedNum = num ? parseInt((num as string).substring(1)) : null;
+						const replacement = (parsedNum && parsedNum !== null && !isNaN(parsedNum) ? (parseInt(nameDict[key]) || nameDict[key]) + parsedNum : nameDict[key] + (num ?? ''));
+						return replacement.toString();
+					}) ?? node.nodeValue;
+				}
+			}
+		});
 	}
 
 	onunload() {
@@ -97,12 +156,12 @@ class SampleModal extends Modal {
 	}
 
 	onOpen() {
-		const {contentEl} = this;
+		const { contentEl } = this;
 		contentEl.setText('Woah!');
 	}
 
 	onClose() {
-		const {contentEl} = this;
+		const { contentEl } = this;
 		contentEl.empty();
 	}
 }
@@ -116,7 +175,7 @@ class SampleSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
-		const {containerEl} = this;
+		const { containerEl } = this;
 
 		containerEl.empty();
 
